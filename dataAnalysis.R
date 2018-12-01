@@ -93,3 +93,51 @@ abline(h=0, lty=1, lwd=3)
 # Team Kills appeared to be non-linear in our Residual-by-Regressor analysis. Upon further Analysis, 
 # we are seeing a ton of 0's in the data and a few outliers. Because we see mostly uniformity with a number 
 # of outliers, we are going to exclude it from our model for now. 
+
+# -------------------------------------------------------+
+#              Normal Prob Plot                    |
+### Once we found irregularities above, we used BT
+### To try to figure out the transformation
+# -------------------------------------------------------+
+
+qqnorm(rstudent_resid_new, datax=TRUE, pch=16, cex=1, xlab="percent", ylab="R-student residual", main = "Normal probability plot of residuals")
+qqline(rstudent_resid_new)
+
+# -------------------------------------------------------+
+# Residual-by-fitted-value plot             |
+# -------------------------------------------------------+
+
+y.hat <- fitted(lm.train.new)
+
+plot(y.hat, rstudent_resid_new, pch=16, cex=1, xlab="fitted value", ylab="R-student residual", main = "Residual-by-fitted-value plot")
+abline(h=0, lty=1, lwd=3)
+
+# -------------------------------------------------------+
+# Review outliers and remove them for model             |
+# -------------------------------------------------------+
+
+game.inf <- dffits(lm.train.new)
+
+n <- nrow(train.subset)
+p <- length(coefficients(lm.train.new))
+cut.inf <- 2*sqrt(p/n)
+
+game.dffits<-as.data.frame(cbind(game.inf,cut.inf))
+names(game.dffits)<-c("game","cut")
+outlier.rows<-as.data.frame(which(game.dffits$game > game.dffits$cut))
+names(outlier.rows)<-c("rownum")
+
+reduced.trainset<-train.subset[-(outlier.rows$rownum),]
+reduced.game.lm<-lm(winPlacePerc~.,data=reduced.trainset)
+
+y.hat <- fitted(reduced.game.lm)
+rstudent_resid_new <- rstudent(reduced.game.lm)
+
+plot(y.hat, rstudent_resid_new, pch=16, cex=1, xlab="fitted value", ylab="R-student residual", main = "Residual-by-fitted-value plot")
+abline(h=0, lty=1, lwd=3)
+
+summary(reduced.game.lm)
+
+#Here is the model & data we are currently working with
+####   reduced.trainset
+####   reduced.game.lm
