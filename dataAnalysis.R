@@ -39,6 +39,8 @@ lm.train.resid <- lm(winPlacePerc ~., data = train.data.resid)
 
 # -------------------------------------------------------+
 #####          Residual-by-regressor plots               |
+#####   Here is where we looked for irregularities in 
+#####   The individual regressors
 # -------------------------------------------------------+
 
 rstudent_resid <- rstudent(lm.train.resid)
@@ -52,27 +54,42 @@ summary(lm(train.data.resid$winPlacePerc~train.data.resid$revives, data=train.da
 
 
 # -------------------------------------------------------+
-#              Box-Tidwell Function                      |
+#              Box-Tidwell Processing                    |
+### Once we found irregularities above, we used BT
+### To try to figure out the transformation
 # -------------------------------------------------------+
 
+# Create subset train data set that only has the variables we want
 train.subset <- train.data.resid %>% select(-heals, -rideDistance, -swimDistance, -vehicleDestroys, -maxPlace)
 
-train.boxTid <- train.subset %>% select(winPlacePerc, walkDistance) %>% 
-                                 filter(walkDistance > 0)
+# Subset that data set to prepare for box-tidwell function (can not have regressor values that are 0 or negative)
+train.boxTid <- train.subset %>% select(roadKills, winPlacePerc) %>% 
+                                 filter(roadKills > 0)
 
-boxTidwell <- boxTidwell(winPlacePerc ~ walkDistance, data=train.boxTid)
+# Run box-tidwell and review results
+boxTidwell <- boxTidwell(winPlacePerc ~ roadKills, data=train.boxTid)
 boxTidwell
 
-train.subset <- train.subset %>% mutate(walkDistance = walkDistance^0.5)
+# Transform the regressor using the lambda found in box-tidwell
+train.subset <- train.subset %>% mutate(killPlace = killPlace^2,
+                                        walkDistance = walkDistance^0.5) %>% 
+                                 select(-revives, -teamKills, -roadKills, -DBNOs, -headshotKills)
 
+# Re-run linear model and review data
 lm.train.new <- lm(winPlacePerc ~., data = train.subset)
-
 summary(lm.train.new)
 
-rstudent_resid <- rstudent(lm.train.new)
-
-plot(train.subset$walkDistance, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
+# Review the new Residual-by-regressor plot
+rstudent_resid_new <- rstudent(lm.train.new)
+plot(train.subset$teamKills, rstudent_resid_new, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
 abline(h=0, lty=1, lwd=3)
 
-plot(train.data.resid$walkDistance, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
-abline(h=0, lty=1, lwd=3)
+# Comments on linearizing data
+
+# Walk distance appeared to be non-linear in our Residual-by-Regressor analysis. Running Box-Tidwell got a lambda of .38881
+# To simplify, we used 0.5 and updated the data. Upon re-running a Residual-by-Regressor plot, 
+# We saw a much better band
+
+# Team Kills appeared to be non-linear in our Residual-by-Regressor analysis. Upon further Analysis, 
+# we are seeing a ton of 0's in the data and a few outliers. Because we see mostly uniformity with a number 
+# of outliers, we are going to exclude it from our model for now. 
