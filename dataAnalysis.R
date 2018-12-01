@@ -7,6 +7,8 @@ setwd(repoLoc)
 # load libraries
 library(car)
 library(perturb)
+library(MASS)
+library(tidyverse)
 
 #load in training data
 train.data <- read.csv("traindata_subset.csv", header = TRUE)
@@ -41,22 +43,36 @@ lm.train.resid <- lm(winPlacePerc ~., data = train.data.resid)
 
 rstudent_resid <- rstudent(lm.train.resid)
 
-plot(train.data.resid$weaponsAcquired, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
+plot(train.data.resid$matchType, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
 abline(h=0, lty=1, lwd=3)
 
+plot(train.data.resid$revives, train.data.resid$winPlacePerc, pch=16, cex=1, xlab="revives", ylab="WinPlacePerc", main = "raw data")
+
+summary(lm(train.data.resid$winPlacePerc~train.data.resid$revives, data=train.data.resid))
+
+
 # -------------------------------------------------------+
-#              Partial regression plots                  |
+#              Box-Tidwell Function                      |
 # -------------------------------------------------------+
 
-y.x2 <- resid(lm(time ~ distance, data=delivery.data))
-x1.x2 <- resid(lm(cases ~ distance, data=delivery.data))
+train.subset <- train.data.resid %>% select(-heals, -rideDistance, -swimDistance, -vehicleDestroys, -maxPlace)
 
-y.x1 <- resid(lm(time ~ cases, data=delivery.data))
-x2.x1 <- resid(lm(distance ~ cases, data=delivery.data))
+train.boxTid <- train.subset %>% select(winPlacePerc, walkDistance) %>% 
+                                 filter(walkDistance > 0)
 
-par(mfrow = c(2, 2), mai=c(0.7,0.7,0.2,0.1)) # mai=c(bottom, left, top, right)
-plot(delivery.data$cases, delivery.data$time, pch=16, cex=1, xlab="cases", ylab="time", main = "raw data")
-plot(delivery.data$distance, delivery.data$time, pch=16, cex=1, xlab="distance", ylab="time", main = "raw data")
-plot(x1.x2, y.x2, pch=16, cex=1, xlab="cases", ylab="time", main = "partial regression plot")
-plot(x2.x1, y.x1, pch=16, cex=1, xlab="distance", ylab="time", main = "partial regression plot")
-par(mfrow = c(1, 1))
+boxTidwell <- boxTidwell(winPlacePerc ~ walkDistance, data=train.boxTid)
+boxTidwell
+
+train.subset <- train.subset %>% mutate(walkDistance = walkDistance^0.5)
+
+lm.train.new <- lm(winPlacePerc ~., data = train.subset)
+
+summary(lm.train.new)
+
+rstudent_resid <- rstudent(lm.train.new)
+
+plot(train.subset$walkDistance, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
+abline(h=0, lty=1, lwd=3)
+
+plot(train.data.resid$walkDistance, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
+abline(h=0, lty=1, lwd=3)
