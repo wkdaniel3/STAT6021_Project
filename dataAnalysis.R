@@ -45,8 +45,6 @@ train.data <- train.data[,c(1:7,9:21)]
 train.subset <- train.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0)) %>% 
                                  select(-winPlacePerc, -heals, -rideDistance, -swimDistance, -vehicleDestroys, -maxPlace)
 
-############################ Below is in progress ###############################################################
-
 # -------------------------------------------------------+
 #####          Residual-by-regressor plots               |
 #####   Here is where we looked for irregularities in 
@@ -81,8 +79,6 @@ summary(lm(train.data.resid$winPlacePerc~train.data.resid$revives, data=train.da
 ### To try to figure out the transformation
 # -------------------------------------------------------+
 
-
-
 # Subset that data set to prepare for box-tidwell function (can not have regressor values that are 0 or negative)
 train.boxTid <- train.test %>% dplyr::select(headshotKills, top10finish) 
 
@@ -115,57 +111,24 @@ abline(h=0, lty=1, lwd=3)
 
 # Comments on linearizing data
 
-# Walk distance appeared to be non-linear in our Residual-by-Regressor analysis. Running Box-Tidwell got a lambda of .38881
-# To simplify, we used 0.5 and updated the data. Upon re-running a Residual-by-Regressor plot, 
-# We saw a much better band
+# DBNOs - looking at regressor vs. response plots to detect non-linearities
+train.test <- train.subset %>% mutate(killPlace = killPlace,
+                                      DBNOs = DBNOs^-0.5)
+train.test <- train.test %>% group_by(DBNOs) %>% summarise(top10count = sum(top10finish), n = n(), final = ifelse(sum(top10finish) == 0, 0.0001, sum(top10finish)/n()))
+train.test <- train.test %>% mutate(logtrans = log(final/(1-final)))
 
-# Team Kills appeared to be non-linear in our Residual-by-Regressor analysis. Upon further Analysis, 
-# we are seeing a ton of 0's in the data and a few outliers. Because we see mostly uniformity with a number 
-# of outliers, we are going to exclude it from our model for now. 
+plot(train.test$DBNOs, train.test$logtrans, pch=16, cex=1, xlab="weaponsAcquired", ylab="Y var", main = "")
 
 # Subset that data set to prepare for box-tidwell function (can not have regressor values that are 0 or negative)
-train.boxTid <- train.test %>% dplyr::select(revives, logtrans) %>% mutate(revives = ifelse(revives == 0, 0.0001, revives))
+train.boxTid <- train.test %>% dplyr::select(killPlace, logtrans) %>% mutate(killPlace = ifelse(killPlace == 0, 0.0001, killPlace))
 
-# Run box-tidwell and review results
-boxTidwell <- boxTidwell(logtrans ~ revives, data=train.boxTid)
+# Run box-tidwell to see if we get better transforms than when we just view the regressor vs. response plots
+boxTidwell <- boxTidwell(logtrans ~ killPlace, data=train.boxTid)
 boxTidwell
-
-
-# Revives
-train.test <- train.subset %>% group_by(revives) %>% summarise(top10count = sum(top10perc), n = n(), final = ifelse(sum(top10perc) == 0, 0.0001, ifelse(sum(top10perc) == 1, 0.9999, sum(top10perc)/n())))
-train.test <- train.test %>% mutate(logtrans = log(final/(1-final)))
-
-plot(train.test$revives, train.test$logtrans, pch=16, cex=1, xlab="revives", ylab="Percentage in top 10", main = "")
-abline(h=0, lty=1, lwd=3)
-
-# DBNOs
-train.test <- train.subset %>% group_by(boosts) %>% summarise(top10count = sum(top10perc), n = n(), final = sum(top10perc)/n())
-train.test <- train.test %>% mutate(logtrans = log(final/(1-final)))
-
-plot(train.test$DBNOs, train.test$logtrans, pch=16, cex=1, xlab="revives", ylab="Percentage in top 10", main = "")
-abline(h=0, lty=1, lwd=3)
 
 ##################################################################################################################
 
-# -------------------------------------------------------+
-#              Normal Prob Plot                    |
-### Once we found irregularities above, we used BT
-### To try to figure out the transformation
-# -------------------------------------------------------+
-
-qqnorm(rstudent_resid_new, datax=TRUE, pch=16, cex=1, xlab="percent", ylab="R-student residual", main = "Normal probability plot of residuals")
-qqline(rstudent_resid_new)
-
-# -------------------------------------------------------+
-# Residual-by-fitted-value plot             |
-# -------------------------------------------------------+
-
-y.hat <- fitted(lm.train.new)
-
-plot(y.hat, rstudent_resid_new, pch=16, cex=1, xlab="fitted value", ylab="R-student residual", main = "Residual-by-fitted-value plot")
-abline(h=0, lty=1, lwd=3)
-
-#### PART 4 - REVIEW OUTLIERS - IGNORE FOR NOW ----
+#### PART 4 - REVIEWing OUTLIERS -----
 
 # -------------------------------------------------------+
 # Review outliers and remove them for model             |
@@ -196,11 +159,40 @@ summary(reduced.game.lm)
 #### PART 5 - EVALUATE MODELS ----
 
 # Pair down the data set
-train.subset.complex <- train.subset %>% select(-roadKills, -teamKills, -headshotKills, -matchDuration, -matchType, -longestKill)
-train.subset.middle <- train.subset %>% select(-roadKills, -revives, -teamKills, -headshotKills, -DBNOs, -matchDuration, -matchType, -longestKill)
+train.subset.complex <- train.subset %>% select(-roadKills, -teamKills, -headshotKills, -matchDuration, -matchType, -longestKill, -kills)
+train.subset.middle <- train.subset %>% select(-roadKills, -revives, -teamKills, -headshotKills, -DBNOs, -matchDuration, -matchType, -longestKill, -kills)
 train.subset.simple <- train.subset %>% select(assists, damageDealt, killPlace,top10finish)
 
 # Models: Complex model (8 vars, with Revives & DBNOs), Middle model (6 vars, no transforms), Simple model(Assists, damageDealt, killPlace)
 glm.complex <- glm(top10finish ~., family=binomial, data = train.subset.complex)
 glm.middle <- glm(top10finish ~., family=binomial, data = train.subset.middle)
 glm.simple <- glm(top10finish ~., family=binomial, data = train.subset.simple)
+
+#### PART 6 - PREDICTIVE MODELS ----
+
+# Create a test data set with 1M rows
+test.data <- read.csv("trainset.csv", header = TRUE)
+
+# Remove the index column
+test.data <- test.data[2000001:3000000,-1]
+
+# Create a column for top10finish
+test.data <- test.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0)) 
+
+# Calculate the hit-rate for the complex model 
+complex.fitted.results <- predict(glm.complex,newdata=subset(test.data,select=c('assists','boosts','damageDealt','DBNOs','killPlace','revives','walkDistance','weaponsAcquired')),type='response')
+complex.fitted.results_binary <- round(complex.fitted.results)
+misClasificError <- mean(complex.fitted.results_binary != test.data$top10finish)
+print(paste('Accuracy',1-misClasificError)) #Accuracy 0.248073, "Accuracy 0.917197"
+
+# Calculate the hit-rate for the middle model 
+middle.fitted.results <- predict(glm.middle,newdata=subset(test.data,select=c('assists','boosts','damageDealt','killPlace','walkDistance','weaponsAcquired')),type='response')
+middle.fitted.results_binary <- round(middle.fitted.results)
+misClasificError <- mean(middle.fitted.results_binary != test.data$top10finish)
+print(paste('Accuracy',1-misClasificError)) #Accuracy 0.249744
+
+# Calculate the hit-rate for the simple model 
+simple.fitted.results <- predict(glm.simple,newdata=subset(test.data,select=c('assists','damageDealt','killPlace'),type='response'))
+simple.fitted.results_binary <- round(simple.fitted.results)
+misClasificError <- mean(simple.fitted.results_binary != test.data$top10finish)
+print(paste('Accuracy',1-misClasificError)) #Accuracy 0.044643
