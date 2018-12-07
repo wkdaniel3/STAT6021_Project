@@ -1,36 +1,19 @@
 # STAT6021_Project
 PUBG Finish Placement Prediction Project
 
-# Linear Vars
+# Vars
 assists
 
-boosts
+boosts - ^-0.5 transform
 
-kills
-
-longestKill
-
-matchDuration
-
-matchType
+damageDealt
 
 weaponsAcquired
 
-winPlacePerc
+killPlace - Non-linear, but can't find a better fit
 
-# Non-linear vars
-killPlace - Non-linear (lambda of 2)
+walkDistance
 
-walkDistance - Not linear (lambda of 0.5)
+revives - ^-0.5
 
-
-# Non-linear, but don't know how to transform	
-revives - suggests ~-1 lambda, but we have a lot of 0's, so they had to be excluded from the model
-
-teamKills - suggests -2 lambda, similar to revives
-
-roadKills - Not Linear > bombs out the box-tidwell function
-
-DBNOs - showing a lambda of -0.27
-
-headshotKills - -0.3
+DBNOs - -0.5
