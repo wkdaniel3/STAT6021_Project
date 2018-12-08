@@ -212,7 +212,7 @@ lm.fitted.results <- predict(lm.complex,newdata=subset(test.data,select=c('assis
 MeanAbsError <- mean(abs(test.data$winPlacePerc-lm.fitted.results))
 print(paste('Error',MeanAbsError))
 
-#Hit Rate for full model
+#Hit Rate for original full model
 lm.fitted.results <- predict(lm.train, newdata=subset(test.data,select=c('assists','boosts','kills', 'damageDealt','DBNOs','killPlace','revives','walkDistance','weaponsAcquired','heals','longestKill','headshotKills','matchDuration','maxPlace','rideDistance','roadKills','swimDistance','teamKills','vehicleDestroys','matchType')), interval="prediction", level=0.95)
 lowerbound <- lm.fitted.results[,2] 
 upperbound <- lm.fitted.results[,3] 
