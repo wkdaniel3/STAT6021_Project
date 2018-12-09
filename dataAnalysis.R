@@ -12,14 +12,27 @@ library(tidyverse)
 
 ####### PART 1 - LOAD IN TRAINING SET AND REVIEW SIMPLE LINEAR REGRESSION MODEL ----
 
-#load in training data
-train.data <- read.csv("traindata_subset.csv", header = TRUE)
-train.data <- train.data[,c(3:23)]
+full.data <- read.csv("trainset.csv", header = TRUE)
+
+#Remove outliers
+full.data$'cheaters' <- (full.data$'kills' > 0) & (full.data$'walkDistance' == 0)
+sum(full.data$'cheaters') #1549
+full.data <- full.data[full.data$'cheaters' == FALSE,]
+
+#Create training subset
+train.data <- full.data[1:1000000,-1]
+drops <- c('X','cheaters')
+train.data <- train.data[ , !(names(train.data) %in% drops)]
 
 # Look at full model
-lm.train.full <- lm(winPlacePerc ~., data = train.data)
+lm.train <- lm(winPlacePerc ~., data = train.data)
+summary(lm.train)
+#RSQ .8158
+anova(lm.train)
 
-summary(lm.train.full)
+# Review our response data
+response.analysis <- train.data %>% group_by(winPlacePerc) %>% summarize(count = n()) %>% select(winPlacePerc, count)
+plot(response.analysis$winPlacePerc, response.analysis$count, pch=16, cex=1, xlab="WinPlacePerc", ylab="Count", main = "Win placement percentage vs. Data Count")
 
 ####### PART 2 - REVIEW CORRELATED REGRESSORS AND MULTI-COLLINEARITY ----
 
@@ -30,35 +43,53 @@ summary(lm.train.full)
 # Since Kills is likely an indicator of the damage dealt
 # We removed that from our model
 
-train.data.int <- train.data[,c(1:7,9:10, 12:21)]
+kills <- train.data$kills
+damageDealt <- train.data$damageDealt
+matchType <- train.data$matchType
+winPlacePerc <- train.data$winPlacePerc
+drops <- c("damageDealt", "matchType")
+train.data.int <- train.data[ , !(names(train.data) %in% drops)]
 lm.train.data.int <- lm(winPlacePerc ~., data = train.data.int)
+summary(lm.train.data.int)
 
-cor(train.data.int[,1:19]) 
+cor(train.data.int[,1:18]) 
 vif(lm.train.data.int)
-
-# Remove kills in favor of damage dealt
-train.data <- train.data[,c(1:7,9:21)]
 
 #### PART 3 - EVALUATE IRREGULARITIES IN INDIVIDUAL REGRESSORS ----
 
+# Reviewing initial linear model and residuals associated with model
+rstudent_resid_linear <- rstudent(lm.train)
+linear.fitted <- fitted.values(lm.train)
+
+plot(linear.fitted, rstudent_resid_linear, pch=16, cex=1, xlab="Fitted Values", ylab="R-student residual", main = "Residual-by-fitted value plot")
+abline(h=0, lty=1, lwd=3)
+
 # Create subset train data set that only has the variables we want
-train.subset <- train.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0)) %>% 
-                                 select(-winPlacePerc, -heals, -rideDistance, -swimDistance, -vehicleDestroys, -maxPlace)
+train.subset <- train.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0)) %>% select(-winPlacePerc, -heals, -rideDistance, -swimDistance, -vehicleDestroys, -maxPlace)
 
 # -------------------------------------------------------+
-#####          Residual-by-regressor plots               |
+#####          Response-by-regressor plots               |
 #####   Here is where we looked for irregularities in 
 #####   The individual regressors
 # -------------------------------------------------------+
 
-rstudent_resid <- rstudent(lm.train.resid)
+# revives - One example
+train.test <- train.subset %>% mutate(boosts = boosts)
+train.test <- train.test %>% group_by(boosts) %>% summarise(top10count = sum(top10finish), n = n(), final = ifelse(sum(top10finish) == 0, 0.0001, ifelse(sum(top10finish)/n()==1, 0.999, sum(top10finish)/n())))
+train.test <- train.test %>% mutate(logtrans = log(final/(1-final)))
 
-plot(train.data.resid$matchType, rstudent_resid, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
+plot(train.test$boosts, train.test$logtrans, pch=16, cex=1, xlab="Boosts", ylab="Transformed Y", main = "Response-by-Regressor")
+
+# -------------------------------------------------------+
+#####          Residual-by-regressor plots               |
+# -------------------------------------------------------+
+
+lm.residual <- lm(logtrans~boosts, data = train.test)
+
+rstudent_resid <- rstudent(lm.residual)
+
+plot(train.test$logtrans, rstudent_resid, pch=16, cex=1, xlab="boosts", ylab="R-student residual", main = "Residual-by-regressor plot")
 abline(h=0, lty=1, lwd=3)
-
-plot(train.data.resid$revives, train.data.resid$winPlacePerc, pch=16, cex=1, xlab="revives", ylab="WinPlacePerc", main = "raw data")
-
-summary(lm(train.data.resid$winPlacePerc~train.data.resid$revives, data=train.data.resid))
 
 # Team Kills, Road Kills, headShotKills
 # Grouping these columns and plotting them against the percentage of top 10 finishes, we see a negative correlation. 
@@ -80,50 +111,10 @@ summary(lm(train.data.resid$winPlacePerc~train.data.resid$revives, data=train.da
 # -------------------------------------------------------+
 
 # Subset that data set to prepare for box-tidwell function (can not have regressor values that are 0 or negative)
-train.boxTid <- train.test %>% dplyr::select(headshotKills, top10finish) 
+train.boxTid <- train.test %>% dplyr::select(boosts, logtrans) 
 
 # Run box-tidwell and review results
-boxTidwell <- boxTidwell(winPlacePerc ~ DBNOs, data=train.boxTid)
-boxTidwell
-
-# Update 0's to 0.0001 for the needed data points
-train.subset <- train.subset %>% mutate(revives = ifelse(revives == 0, 0.0001, revives),
-                                        teamKills = ifelse(teamKills == 0, 0.0001, teamKills),
-                                        DBNOs = ifelse(DBNOs == 0, 0.0001, DBNOs),
-                                        headshotKills = ifelse(headshotKills == 0, 0.0001, headshotKills))
-
-# Transform the regressor using the lambda found in box-tidwell
-train.subset <- train.subset %>% mutate(killPlace = killPlace^2,
-                                        walkDistance = walkDistance^0.5,
-                                        revives = revives^0.5,
-                                        teamKills = teamKills^-2,
-                                        headshotKills = headshotKills^-0.25) %>% 
-                                 select(-roadKills)
-
-# Re-run linear model and review data
-lm.train.new <- lm(winPlacePerc ~., data = train.subset)
-summary(lm.train.new)
-
-# Review the new Residual-by-regressor plot
-rstudent_resid_new <- rstudent(lm.train.new)
-plot(train.subset$teamKills, rstudent_resid_new, pch=16, cex=1, xlab="x_var", ylab="R-student residual", main = "Residual-by-regressor plot")
-abline(h=0, lty=1, lwd=3)
-
-# Comments on linearizing data
-
-# DBNOs - looking at regressor vs. response plots to detect non-linearities
-train.test <- train.subset %>% mutate(killPlace = killPlace,
-                                      DBNOs = DBNOs^-0.5)
-train.test <- train.test %>% group_by(DBNOs) %>% summarise(top10count = sum(top10finish), n = n(), final = ifelse(sum(top10finish) == 0, 0.0001, sum(top10finish)/n()))
-train.test <- train.test %>% mutate(logtrans = log(final/(1-final)))
-
-plot(train.test$DBNOs, train.test$logtrans, pch=16, cex=1, xlab="weaponsAcquired", ylab="Y var", main = "")
-
-# Subset that data set to prepare for box-tidwell function (can not have regressor values that are 0 or negative)
-train.boxTid <- train.test %>% dplyr::select(killPlace, logtrans) %>% mutate(killPlace = ifelse(killPlace == 0, 0.0001, killPlace))
-
-# Run box-tidwell to see if we get better transforms than when we just view the regressor vs. response plots
-boxTidwell <- boxTidwell(logtrans ~ killPlace, data=train.boxTid)
+boxTidwell <- boxTidwell(logtrans ~ boosts, data=train.boxTid)
 boxTidwell
 
 ##################################################################################################################
@@ -159,14 +150,20 @@ summary(reduced.game.lm)
 #### PART 5 - EVALUATE MODELS ----
 
 # Pair down the data set
+train.subset.lm <- train.data %>% select(-roadKills, -vehicleDestroys)
 train.subset.complex <- train.subset %>% select(-roadKills, -teamKills, -headshotKills, -matchDuration, -matchType, -longestKill, -kills)
 train.subset.middle <- train.subset %>% select(-roadKills, -revives, -teamKills, -headshotKills, -DBNOs, -matchDuration, -matchType, -longestKill, -kills)
 train.subset.simple <- train.subset %>% select(assists, damageDealt, killPlace,top10finish)
 
 # Models: Complex model (8 vars, with Revives & DBNOs), Middle model (6 vars, no transforms), Simple model(Assists, damageDealt, killPlace)
+lm.complex <- lm(train.data$winPlacePerc ~., data = train.data)
 glm.complex <- glm(top10finish ~., family=binomial, data = train.subset.complex)
 glm.middle <- glm(top10finish ~., family=binomial, data = train.subset.middle)
 glm.simple <- glm(top10finish ~., family=binomial, data = train.subset.simple)
+
+summary(glm.complex)
+summary(glm.middle)
+summary(glm.simple)
 
 #### PART 6 - PREDICTIVE MODELS ----
 
@@ -177,7 +174,26 @@ test.data <- read.csv("trainset.csv", header = TRUE)
 test.data <- test.data[2000001:3000000,-1]
 
 # Create a column for top10finish
-test.data <- test.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0)) 
+test.data <- test.data %>% mutate(top10finish = ifelse(winPlacePerc >= 0.90,1,0))
+test.data.2 <- test.data %>% mutate(chickendinner.test = ifelse(winPlacePerc == 1,1,0)) 
+
+# MAE for full multiple linear regression
+lm.fitted.results <- predict(lm.train,newdata=subset(test.data,select=c('assists','boosts','kills', 'damageDealt','DBNOs','killPlace','revives','walkDistance','weaponsAcquired','heals','longestKill','headshotKills','matchDuration','maxPlace','rideDistance','roadKills','swimDistance','teamKills','vehicleDestroys','matchType')),type='response')
+MeanAbsError <- mean(abs(test.data$winPlacePerc-lm.fitted.results))
+print(paste('Error',MeanAbsError)) #"Error 0.12357484382543" "0.0979514835272643"
+
+# MAE testing
+lm.fitted.results <- predict(lm.complex,newdata=subset(test.data,select=c('assists','boosts','kills','revives','walkDistance','swimDistance','rideDistance','weaponsAcquired','longestKill','heals','DBNOs','killPlace','matchDuration','teamKills','matchType','headshotKills','damageDealt','maxPlace','roadKills','vehicleDestroys')),type='response')
+MeanAbsError <- mean(abs(test.data$winPlacePerc-lm.fitted.results))
+print(paste('Error',MeanAbsError))
+
+#Hit Rate for original full model
+lm.fitted.results <- predict(lm.train, newdata=subset(test.data,select=c('assists','boosts','kills', 'damageDealt','DBNOs','killPlace','revives','walkDistance','weaponsAcquired','heals','longestKill','headshotKills','matchDuration','maxPlace','rideDistance','roadKills','swimDistance','teamKills','vehicleDestroys','matchType')), interval="prediction", level=0.95)
+lowerbound <- lm.fitted.results[,2] 
+upperbound <- lm.fitted.results[,3] 
+withinbound <- data.frame(cbind(lowerbound<test.data$winPlacePerc,test.data$winPlacePerc<upperbound))
+sum(withinbound$X1 == TRUE & withinbound$X2==TRUE)/1000000
+#full model: 94.4% hit rate within prediction interval
 
 # Calculate the hit-rate for the complex model 
 complex.fitted.results <- predict(glm.complex,newdata=subset(test.data,select=c('assists','boosts','damageDealt','DBNOs','killPlace','revives','walkDistance','weaponsAcquired')),type='response')
